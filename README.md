@@ -113,7 +113,8 @@ cd frontend
 **首次运行** — 先安装依赖（只需执行一次）：
 
 ```powershell
-npm install
+pm run dev
+
 ```
 
 **启动开发服务器：**

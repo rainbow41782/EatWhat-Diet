@@ -6,31 +6,36 @@ import { Activity, Calendar, CheckSquare, FileText, Flame, MapPin, Sparkles, Tre
 
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
 import { MainNavbar } from '@/components/ui/main-navbar';
-import { RecommendationPanel } from '@/components/ui/recommendation-panel';
+import { RecommendationPanel, type SuggestionItem } from '@/components/ui/recommendation-panel';
 import RadialOrbitalTimeline, { TimelineItem } from '@/components/ui/radial-orbital-timeline';
 import { CalorieTrackerCard, MealCheckItem } from '@/components/ui/tracker-card';
 import { CollapsiblePanelDesktop, CollapsiblePanelMobile } from '@/components/ui/collapsible-panel';
 
 import { getAuth, clearAuth } from '@/lib/auth';
-import { fetchUser, fetchUserProfile, fetchTodayNutrition, fetchCheckIns, fetchRecommendations, fetchRecentMeals, addWaterIntake, fetchRestaurant } from '@/lib/api';
+import {
+  fetchUser,
+  fetchUserProfile,
+  fetchTodayNutrition,
+  fetchCheckIns,
+  fetchCurrentRecommendations,
+  fetchRecentMeals,
+  addWaterIntake,
+  generateDailyRecommendations,
+  unwrapApiData,
+  type RecommendationResponse,
+} from '@/lib/api';
+import { sortRecommendationsForDisplay } from '@/lib/recommendation-utils';
 import { computeHealthScore } from '@/lib/healthScore';
 
-type Recommendation = {
-  mealType?: 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK' | string;
-  foodItemName?: string;
-  totalCalories?: number;
-  restaurantId?: number;
-};
+type Recommendation = RecommendationResponse;
 
-type RestaurantInfo = {
-  id: number;
-  name?: string;
-  address?: string;
-};
 
 type CheckIn = {
   checkDate?: string;
   streakCount?: number;
+  totalProtein?: number;
+  totalFat?: number;
+  totalCarb?: number;
 };
 
 type UserProfile = {
@@ -81,6 +86,41 @@ function getNextMealLabel(now = new Date()) {
   if (hour < 15) return '午餐';
   if (hour < 20) return '晚餐';
   return '加餐';
+}
+
+function getNextMealType(now = new Date()): 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK' {
+  const hour = now.getHours();
+  if (hour < 10) return 'BREAKFAST';
+  if (hour < 15) return 'LUNCH';
+  if (hour < 20) return 'DINNER';
+  return 'SNACK';
+}
+
+function recommendationToSuggestion(item: RecommendationResponse): SuggestionItem {
+  const first = item.items?.[0];
+  return {
+    name: first?.name ?? item.foodItemName ?? '推荐菜品',
+    description: first?.description ?? item.recommendedReason,
+    calories: Math.round(first?.totalCalories ?? item.totalCalories ?? 0),
+    protein: first?.totalProtein,
+    fat: first?.totalFat,
+    carb: first?.totalCarb,
+    restaurantName: first?.restaurantName ?? item.restaurant?.name,
+    restaurantAddress: first?.restaurantAddress ?? item.restaurant?.address,
+    price: first?.price,
+    portionSize: first?.portionSize,
+    imageUrl: first?.imageUrl,
+  };
+}
+
+function recommendationsToSuggestions(recommendations: RecommendationResponse[]): SuggestionItem[] {
+  return recommendations.slice(0, 4).map(recommendationToSuggestion);
+}
+
+function homeSuggestionsFromRecommendations(recommendations: RecommendationResponse[]): SuggestionItem[] {
+  const nextMeal = getNextMealType();
+  const nextMealRecs = recommendations.filter((item) => item.mealType === nextMeal);
+  return recommendationsToSuggestions(nextMealRecs.length > 0 ? nextMealRecs : recommendations);
 }
 
 function buildMealChecks(recentMeals: RecentMeal[]): MealCheckItem[] {
@@ -276,7 +316,11 @@ export default function HomePage() {
   const [goalCalories, setGoalCalories] = useState(2000);
   const [macros, setMacros] = useState<{ protein: { current: number; goal: number }; fat: { current: number; goal: number }; carb: { current: number; goal: number } } | undefined>(undefined);
   const [waterIntakeMl, setWaterIntakeMl] = useState(0);
-  const [suggestions, setSuggestions] = useState<{ name: string; calories: number; restaurantName?: string; restaurantAddress?: string }[]>([]);
+  const [todayRecommendations, setTodayRecommendations] = useState<RecommendationResponse[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(true);
+  const [generatingRecommendation, setGeneratingRecommendation] = useState(false);
+  const [recommendationError, setRecommendationError] = useState('');
   const [mealChecks, setMealChecks] = useState<MealCheckItem[]>([]);
   const [planExpired, setPlanExpired] = useState(false);
   const [planSummary, setPlanSummary] = useState<{ checkInDays: number; completionRate: number } | null>(null);
@@ -288,23 +332,25 @@ export default function HomePage() {
     const auth = getAuth();
     if (!auth) {
       setIsLoggedIn(false);
+      setRecommendationsLoading(false);
       return;
     }
 
     setIsLoggedIn(true);
+    setRecommendationsLoading(true);
 
     Promise.all([
       fetchUser(auth.userId).catch(() => null),
       fetchUserProfile(auth.userId).catch(() => null),
       fetchTodayNutrition(auth.userId).catch(() => null),
       fetchCheckIns(auth.userId).catch(() => null),
-      fetchRecommendations(auth.userId).catch(() => null),
+      fetchCurrentRecommendations(auth.userId).catch(() => null),
       fetchRecentMeals(auth.userId, 50).catch(() => null),
     ]).then(async ([userRes, profileRes, nutritionRes, checkInsRes, recRes, recentMealsRes]) => {
       const user = userRes?.data;
       const nutrition = nutritionRes?.data;
       const checkIns: CheckIn[] = checkInsRes?.data ?? [];
-      const recommendations: Recommendation[] = recRes?.data ?? [];
+      const recommendations: Recommendation[] = unwrapApiData<Recommendation[]>(recRes, []);
       const recentMeals: RecentMeal[] = recentMealsRes?.data ?? [];
 
       const profile: UserProfile | null = profileRes?.data ?? null;
@@ -331,20 +377,11 @@ export default function HomePage() {
       setWaterIntakeMl(nutrition?.waterIntakeMl ?? 0);
 
       // 获取推荐中涉及的餐厅信息
-      const uniqueRestaurantIds = [...new Set(
-        recommendations.slice(0, 4).map((r) => r.restaurantId).filter((id): id is number => !!id)
-      )];
-      const restaurantMap: Record<number, RestaurantInfo> = {};
-      if (uniqueRestaurantIds.length > 0) {
-        await Promise.all(
-          uniqueRestaurantIds.map((id) =>
-            fetchRestaurant(id).then((r) => {
-              if (r?.data) restaurantMap[id] = r.data;
-            }).catch(() => {})
-          )
-        );
-      }
+      const sharedRecommendations = sortRecommendationsForDisplay(recommendations);
+      setTodayRecommendations(sharedRecommendations);
 
+      setSuggestions(homeSuggestionsFromRecommendations(sharedRecommendations));
+      /*
       const recSuggestions = recommendations.slice(0, 4).map((item) => {
         const rest = item.restaurantId ? restaurantMap[item.restaurantId] : undefined;
         return {
@@ -355,6 +392,7 @@ export default function HomePage() {
         };
       });
       setSuggestions(recSuggestions);
+      */
 
       const timeline = buildTimelineData(recommendations, checkIns, profile, recentMeals, todayCalories, targetCalories);
       setTimelineData(timeline);
@@ -394,6 +432,8 @@ export default function HomePage() {
           setPlanGoalLabel(_goalMap[profile?.healthGoal || ''] || '');
         }
       }
+    }).finally(() => {
+      setRecommendationsLoading(false);
     });
   }, []);
 
@@ -412,6 +452,27 @@ export default function HomePage() {
     } catch {
       // 乐观更新回滚
       setWaterIntakeMl((prev) => prev - addedMl);
+    }
+  };
+
+  const handleGenerateNextRecommendation = async () => {
+    const auth = getAuth();
+    if (!auth) {
+      router.push('/login');
+      return;
+    }
+    setGeneratingRecommendation(true);
+    setRecommendationError('');
+    try {
+      const data = await generateDailyRecommendations({ userId: auth.userId });
+      const results = unwrapApiData<RecommendationResponse[]>(data, []);
+      const sharedRecommendations = sortRecommendationsForDisplay(results);
+      setTodayRecommendations(sharedRecommendations);
+      setSuggestions(homeSuggestionsFromRecommendations(sharedRecommendations));
+    } catch {
+      setRecommendationError('生成失败，请稍后重试');
+    } finally {
+      setGeneratingRecommendation(false);
     }
   };
 
@@ -521,6 +582,11 @@ export default function HomePage() {
                   nextMealLabel={nextMealLabel}
                   items={suggestions}
                   collapseButton={collapseBtn}
+                  generating={generatingRecommendation}
+                  loading={recommendationsLoading}
+                  generateError={recommendationError}
+                  onGenerate={!recommendationsLoading && todayRecommendations.length === 0 ? handleGenerateNextRecommendation : undefined}
+                  onRefresh={!recommendationsLoading && todayRecommendations.length > 0 ? handleGenerateNextRecommendation : undefined}
                 />
               )}
             </CollapsiblePanelDesktop>
@@ -589,6 +655,11 @@ export default function HomePage() {
                     nextMealLabel={nextMealLabel}
                     items={suggestions}
                     className="w-full rounded-none border-0 bg-transparent backdrop-blur-none shadow-none"
+                    generating={generatingRecommendation}
+                    loading={recommendationsLoading}
+                    generateError={recommendationError}
+                    onGenerate={!recommendationsLoading && todayRecommendations.length === 0 ? handleGenerateNextRecommendation : undefined}
+                    onRefresh={!recommendationsLoading && todayRecommendations.length > 0 ? handleGenerateNextRecommendation : undefined}
                   />
                 </CollapsiblePanelMobile>
                 {/* 可折叠热量追踪卡片 */}

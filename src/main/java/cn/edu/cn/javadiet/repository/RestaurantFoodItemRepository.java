@@ -1,6 +1,7 @@
 package cn.edu.cn.javadiet.repository;
 
 import cn.edu.cn.javadiet.model.entity.RestaurantFoodItem;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,8 @@ public interface RestaurantFoodItemRepository extends JpaRepository<RestaurantFo
     List<RestaurantFoodItem> findByExternalSource(String externalSource);
 
     List<RestaurantFoodItem> findByFoodItemId(Long foodItemId);
+
+    List<RestaurantFoodItem> findByFoodItemIdIn(Collection<Long> foodItemIds);
 
     Optional<RestaurantFoodItem> findByRestaurantIdAndExternalSourceAndExternalFoodId(
             Long restaurantId,

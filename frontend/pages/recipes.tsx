@@ -11,25 +11,19 @@ import {
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
 import { MainNavbar } from '@/components/ui/main-navbar';
 import { PageCard } from '@/components/ui/page-card';
+import type { RecommendationStackItem } from '@/components/ui/recommendation-card-stack';
 import { getAuth, clearAuth } from '@/lib/auth';
 import {
   fetchUser, fetchFoods,
-  generateRecommendations, acceptRecommendation, ignoreRecommendation,
-  fetchRecommendations,
+  generateDailyRecommendations, acceptRecommendation, ignoreRecommendation,
+  fetchCurrentRecommendations,
+  unwrapApiData,
+  type RecommendationResponse,
 } from '@/lib/api';
+import { sortRecommendationsForDisplay } from '@/lib/recommendation-utils';
 
 // ── 类型定义 ──────────────────────────────────────────────
-type Rec = {
-  id: number;
-  mealType: string;
-  recommendedReason: string;
-  targetCalories: number;
-  targetProtein: number;
-  targetFat: number;
-  targetCarb: number;
-  status: string;
-  restaurantId?: number;
-};
+type Rec = RecommendationResponse;
 
 type FoodItem = {
   id: number;
@@ -79,6 +73,10 @@ function MacroBadge({ icon, label, value, color }: { icon: React.ReactNode; labe
       <span className="font-mono font-semibold">{value}</span>
     </div>
   );
+}
+
+function formatMacro(value?: number, suffix = 'g') {
+  return value == null ? '-' : `${Math.round(value * 10) / 10}${suffix}`;
 }
 
 // ── 克重步进输入（chevron 风格，与 correct-number-input 同款）──
@@ -157,10 +155,28 @@ function foodMacroBadges(food: FoodItem, small = false) {
 }
 
 // ── 推荐食谱卡 ────────────────────────────────────────────
+function recToStoryItem(rec: Rec): RecommendationStackItem {
+  const item = rec.items?.[0];
+  return {
+    name: item?.name ?? rec.foodItemName ?? '推荐菜品',
+    description: item?.description ?? rec.recommendedReason,
+    calories: Math.round(item?.totalCalories ?? rec.totalCalories ?? 0),
+    protein: item?.totalProtein,
+    fat: item?.totalFat,
+    carb: item?.totalCarb,
+    restaurantName: item?.restaurantName ?? rec.restaurant?.name,
+    restaurantAddress: item?.restaurantAddress ?? rec.restaurant?.address,
+    price: item?.price,
+    portionSize: item?.portionSize,
+    imageUrl: item?.imageUrl,
+  };
+}
+
 function RecCard({ rec, onAccept, onIgnore }: { rec: Rec; onAccept: () => void; onIgnore: () => void }) {
   const meal = MEAL_TYPES.find(m => m.key === rec.mealType);
   const isAccepted = rec.status === 'ACCEPTED';
   const isIgnored  = rec.status === 'IGNORED';
+  const storyItem = recToStoryItem(rec);
 
   return (
     <motion.div
@@ -178,8 +194,8 @@ function RecCard({ rec, onAccept, onIgnore }: { rec: Rec; onAccept: () => void; 
         <div className="flex items-center gap-2">
           <span className="text-xl">{meal?.emoji ?? '🍽️'}</span>
           <div>
-            <p className="text-sm font-semibold text-white">{meal?.label ?? rec.mealType}</p>
-            <p className="text-xs text-white/40">目标摄入</p>
+            <p className="text-sm font-semibold text-white">{storyItem.name}</p>
+            <p className="text-xs text-white/40">建议摄入</p>
           </div>
         </div>
         {!isIgnored && (
@@ -203,10 +219,10 @@ function RecCard({ rec, onAccept, onIgnore }: { rec: Rec; onAccept: () => void; 
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <MacroBadge icon={<Flame size={10} />} label="热量" value={`${rec.targetCalories ?? 0} kcal`} color="border-orange-500/30 text-orange-300" />
-        <MacroBadge icon={<Beef size={10} />}   label="蛋白" value={`${rec.targetProtein ?? 0}g`}     color="border-blue-500/30 text-blue-300" />
-        <MacroBadge icon={<Wheat size={10} />}  label="碳水" value={`${rec.targetCarb ?? 0}g`}        color="border-yellow-500/30 text-yellow-300" />
-        <MacroBadge icon={<Droplets size={10} />} label="脂肪" value={`${rec.targetFat ?? 0}g`}       color="border-purple-500/30 text-purple-300" />
+        <MacroBadge icon={<Flame size={10} />} label="热量" value={formatMacro(storyItem.calories, ' kcal')} color="border-orange-500/30 text-orange-300" />
+        <MacroBadge icon={<Beef size={10} />}   label="蛋白" value={formatMacro(storyItem.protein)} color="border-blue-500/30 text-blue-300" />
+        <MacroBadge icon={<Wheat size={10} />}  label="碳水" value={formatMacro(storyItem.carb)} color="border-yellow-500/30 text-yellow-300" />
+        <MacroBadge icon={<Droplets size={10} />} label="脂肪" value={formatMacro(storyItem.fat)} color="border-purple-500/30 text-purple-300" />
       </div>
 
       {rec.recommendedReason ? (
@@ -543,6 +559,7 @@ export default function RecipesPage() {
 
   // 今日推荐 state
   const [recs, setRecs] = useState<Rec[]>([]);
+  const [loadingRecs, setLoadingRecs] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState('');
 
@@ -565,11 +582,17 @@ export default function RecipesPage() {
       setIsLoggedIn(true);
       setUserId(auth.userId);
       fetchUser(auth.userId).then(d => setNickname(d.data?.nickname || d.nickname || ''));
-      // 加载历史推荐
-      fetchRecommendations(auth.userId).then(d => {
-        const list: Rec[] = Array.isArray(d) ? d : (d.data ?? []);
-        setRecs(list);
+      setLoadingRecs(true);
+      fetchCurrentRecommendations(auth.userId).then(d => {
+        const list = unwrapApiData<Rec[]>(d, []);
+        setRecs(sortRecommendationsForDisplay(list));
+      }).catch(() => {
+        setRecs([]);
+      }).finally(() => {
+        setLoadingRecs(false);
       });
+    } else {
+      setLoadingRecs(false);
     }
   }, []);
 
@@ -580,14 +603,9 @@ export default function RecipesPage() {
     setGenerating(true);
     setGenError('');
     try {
-      // 为每个餐次生成推荐
-      const results: Rec[] = [];
-      for (const meal of MEAL_TYPES) {
-        const d = await generateRecommendations({ userId, targetMealType: meal.key });
-        const list: Rec[] = Array.isArray(d) ? d : (d.data ?? []);
-        results.push(...list);
-      }
-      setRecs(results);
+      const d = await generateDailyRecommendations({ userId });
+      const list = unwrapApiData<Rec[]>(d, []);
+      setRecs(sortRecommendationsForDisplay(list));
     } catch {
       setGenError('生成失败，请稍后重试');
     } finally {
@@ -626,6 +644,7 @@ export default function RecipesPage() {
     ...m,
     recs: recs.filter(r => r.mealType === m.key),
   }));
+  const hasTodayRecommendations = recs.length > 0;
 
   return (
     <div className="relative min-h-screen w-screen">
@@ -686,6 +705,22 @@ export default function RecipesPage() {
                         <p className="text-sm font-semibold text-white">AI 生成今日食谱</p>
                         <p className="text-xs text-white/45">基于你的健康档案与热量目标自动生成</p>
                       </div>
+                      {loadingRecs ? (
+                        <div className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/50">
+                          <RefreshCw size={14} className="animate-spin" />加载中...
+                        </div>
+                      ) : hasTodayRecommendations ? (
+                        <button
+                          onClick={handleGenerate}
+                          disabled={generating || !isLoggedIn}
+                          className="flex items-center gap-1.5 rounded-xl border border-cyan-500/35 bg-cyan-500/12 px-4 py-2 text-sm font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50 transition"
+                        >
+                          {generating
+                            ? <><RefreshCw size={14} className="animate-spin" />生成中...</>
+                            : <><Sparkles size={14} />换一换</>
+                          }
+                        </button>
+                      ) : (
                       <button
                         onClick={handleGenerate}
                         disabled={generating || !isLoggedIn}
@@ -696,6 +731,7 @@ export default function RecipesPage() {
                           : <><Sparkles size={14} />生成食谱</>
                         }
                       </button>
+                      )}
                     </div>
                     {!isLoggedIn && (
                       <p className="text-xs text-white/40 text-center py-2">
@@ -706,32 +742,44 @@ export default function RecipesPage() {
                   </div>
                 </PageCard>
 
-                {recs.length === 0 && !generating && (
+                {loadingRecs && !generating && (
+                  <div className="text-center py-12 text-white/30">
+                    <RefreshCw size={30} className="mx-auto mb-3 animate-spin opacity-50" />
+                    <p className="text-sm">正在加载今日推荐...</p>
+                  </div>
+                )}
+
+                {recs.length === 0 && !generating && !loadingRecs && (
                   <div className="text-center py-12 text-white/30">
                     <UtensilsCrossed size={32} className="mx-auto mb-3 opacity-40" />
                     <p className="text-sm">暂无推荐，点击"生成食谱"获取今日建议</p>
                   </div>
                 )}
 
-                {recByMeal.map(({ key, label, emoji, recs: mealRecs }) =>
-                  mealRecs.length > 0 ? (
+                {recs.length > 0 && recByMeal.map(({ key, label, emoji, recs: mealRecs }) => (
                     <div key={key}>
                       <p className="text-xs text-white/40 uppercase tracking-wider mb-2 px-1">
                         {emoji} {label}
                       </p>
-                      <div className="space-y-2">
-                        {mealRecs.map(rec => (
-                          <RecCard
-                            key={rec.id}
-                            rec={rec}
-                            onAccept={() => handleAccept(rec.id)}
-                            onIgnore={() => handleIgnore(rec.id)}
-                          />
-                        ))}
-                      </div>
+                      {mealRecs.length > 0 ? (
+                        <div className="space-y-2">
+                          {mealRecs.map(rec => (
+                            <RecCard
+                              key={rec.id}
+                              rec={rec}
+                              onAccept={() => handleAccept(rec.id)}
+                              onIgnore={() => handleIgnore(rec.id)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/35">
+                          该餐暂无可推荐菜品
+                        </div>
+                      )}
                     </div>
-                  ) : null
-                )}
+                ))}
+
               </motion.div>
             )}
 

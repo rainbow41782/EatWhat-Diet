@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -102,6 +103,31 @@ public class LlmGatewayClient {
             JsonNode root = objectMapper.readTree(response.body());
             String content = root.path("choices").path(0).path("message").path("content").asText("");
             return parseSearchQueryContent(content);
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    public List<RecommendationLlmChoice> suggestRecommendations(Map<String, Object> recommendationContext) {
+        if (!isConfigured()) {
+            return List.of();
+        }
+        try {
+            String requestBody = objectMapper.writeValueAsString(buildRecommendationRequest(recommendationContext));
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(completionUrl()))
+                    .timeout(Duration.ofSeconds(normalizedTimeoutSeconds()))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + properties.getApiKey())
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return List.of();
+            }
+            JsonNode root = objectMapper.readTree(response.body());
+            String content = root.path("choices").path(0).path("message").path("content").asText("");
+            return parseRecommendationContent(content);
         } catch (Exception ignored) {
             return List.of();
         }
@@ -270,6 +296,60 @@ public class LlmGatewayClient {
         return request;
     }
 
+    private ObjectNode buildRecommendationRequest(Map<String, Object> recommendationContext) throws Exception {
+        ObjectNode request = objectMapper.createObjectNode();
+        request.put("model", properties.getModel());
+        request.put("temperature", properties.getTemperature() == null ? 0.1 : properties.getTemperature());
+        if (properties.isJsonMode()) {
+            request.set("response_format", objectMapper.createObjectNode().put("type", "json_object"));
+        }
+        ArrayNode messages = request.putArray("messages");
+        messages.addObject()
+                .put("role", "system")
+                .put("content", """
+                        You are a diet recommendation reranker for a Chinese food tracking app.
+                        Return exactly one valid JSON object. Do not use Markdown, prose, comments, or code fences.
+                        Required shape:
+                        {"items":[{"foodItemId":123,"reason":"中文推荐理由","displayDescription":"中文短描述","suggestedGrams":150}]}
+                        Rules:
+                        - Select 3 to 4 items only from the provided candidates.
+                        - foodItemId MUST be one of the provided candidate foodItemId values.
+                        - Never invent food items, restaurants, prices, nutrition, or IDs.
+                        - suggestedGrams MUST be a JSON number between 80 and 350.
+                        - Nutrition values are fixed by the database. Do not change or re-estimate them.
+                        - reason should explain fit against the user's current meal nutrition target.
+                        - displayDescription should be concise and appetizing, based only on the provided name/description/menu context.
+                        """);
+        messages.addObject()
+                .put("role", "user")
+                .put("content", objectMapper.writeValueAsString(recommendationContext));
+        return request;
+    }
+
+    private List<RecommendationLlmChoice> parseRecommendationContent(String content) throws Exception {
+        JsonNode root = objectMapper.readTree(extractJson(content));
+        JsonNode items = root.path("items");
+        if (!items.isArray()) {
+            return List.of();
+        }
+        List<RecommendationLlmChoice> choices = new ArrayList<>();
+        for (JsonNode item : items) {
+            Long foodItemId = readLong(item.path("foodItemId"));
+            if (foodItemId == null) {
+                continue;
+            }
+            String reason = item.path("reason").asText("").trim();
+            String description = item.path("displayDescription").asText("").trim();
+            Double grams = readOptionalNumber(item.path("suggestedGrams"));
+            choices.add(new RecommendationLlmChoice(
+                    foodItemId,
+                    reason.isBlank() ? null : reason,
+                    description.isBlank() ? null : description,
+                    grams));
+        }
+        return choices;
+    }
+
     private String completionUrl() {
         String baseUrl = properties.getBaseUrl().trim();
         while (baseUrl.endsWith("/")) {
@@ -351,6 +431,34 @@ public class LlmGatewayClient {
             throw new IllegalArgumentException(field + " must be a number");
         }
         return number;
+    }
+
+    private static Long readLong(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        if (value.isNumber()) {
+            return value.asLong();
+        }
+        if (value.isTextual()) {
+            try {
+                return Long.valueOf(value.asText("").trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static Double readOptionalNumber(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        try {
+            return parseFlexibleNumber(value, "suggestedGrams");
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private static double readConfidence(JsonNode value, List<String> warnings) {
@@ -436,5 +544,12 @@ public class LlmGatewayClient {
         public String getParseWarning() {
             return parseWarning;
         }
+    }
+
+    public record RecommendationLlmChoice(
+            Long foodItemId,
+            String reason,
+            String displayDescription,
+            Double suggestedGrams) {
     }
 }

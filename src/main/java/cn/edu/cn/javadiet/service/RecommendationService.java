@@ -1,16 +1,20 @@
 package cn.edu.cn.javadiet.service;
 
 import cn.edu.cn.javadiet.model.dto.RecommendationRequest;
-import cn.edu.cn.javadiet.model.entity.Recommendation;
+import cn.edu.cn.javadiet.model.dto.RecommendationResponse;
 import java.util.List;
 
 public interface RecommendationService {
 
-    List<Recommendation> generate(RecommendationRequest request);
+    List<RecommendationResponse> generate(RecommendationRequest request);
 
-    List<Recommendation> findHistory(Long userId);
+    List<RecommendationResponse> generateDaily(RecommendationRequest request);
 
-    Recommendation accept(Long recommendationId);
+    List<RecommendationResponse> findCurrent(Long userId);
 
-    Recommendation ignore(Long recommendationId);
+    List<RecommendationResponse> findHistory(Long userId);
+
+    RecommendationResponse accept(Long recommendationId);
+
+    RecommendationResponse ignore(Long recommendationId);
 }

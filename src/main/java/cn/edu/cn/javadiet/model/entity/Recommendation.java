@@ -31,6 +31,9 @@ public class Recommendation {
     @Column(nullable = false)
     private Long userId;
 
+    @Column(length = 64)
+    private String batchId;
+
     private Long restaurantId;
     private LocalDateTime recommendationTime;
 

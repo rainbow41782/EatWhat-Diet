@@ -2,6 +2,60 @@ import { getAuth } from './auth';
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 
+export type RecommendationRestaurant = {
+  id?: number;
+  name?: string;
+  address?: string;
+  rating?: number;
+  avgPrice?: number;
+  tags?: string;
+};
+
+export type RecommendationFood = {
+  foodItemId?: number;
+  name?: string;
+  category?: string;
+  description?: string;
+  caloriesPer100g?: number;
+  proteinPer100g?: number;
+  fatPer100g?: number;
+  carbPer100g?: number;
+  suggestedGrams?: number;
+  unit?: string;
+  totalCalories?: number;
+  totalProtein?: number;
+  totalFat?: number;
+  totalCarb?: number;
+  price?: number;
+  portionSize?: string;
+  menuCategory?: string;
+  imageUrl?: string;
+  restaurantId?: number;
+  restaurantName?: string;
+  restaurantAddress?: string;
+};
+
+export type RecommendationResponse = {
+  id: number;
+  userId?: number;
+  batchId?: string;
+  restaurantId?: number;
+  recommendationTime?: string;
+  mealType?: 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK' | string;
+  recommendedReason?: string;
+  targetCalories?: number;
+  targetProtein?: number;
+  targetFat?: number;
+  targetCarb?: number;
+  score?: number;
+  status?: string;
+  createdAt?: string;
+  foodItemName?: string;
+  totalCalories?: number;
+  restaurant?: RecommendationRestaurant;
+  items?: RecommendationFood[];
+};
+
 function todayStr() {
   const d = new Date();
   const y = d.getFullYear();
@@ -20,6 +74,20 @@ async function apiFetch(path: string, options: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${auth.token}`;
   }
   return fetch(`${BASE}${path}`, { ...options, headers });
+}
+
+export function unwrapApiData<T>(payload: unknown, fallback: T): T {
+  if (Array.isArray(payload)) {
+    return payload as T;
+  }
+  if (payload && typeof payload === 'object') {
+    const value = payload as { success?: boolean; message?: string; data?: T };
+    if (value.success === false) {
+      throw new Error(value.message || 'request failed');
+    }
+    return value.data ?? fallback;
+  }
+  return fallback;
 }
 
 export async function fetchUser(userId: number) {
@@ -51,6 +119,11 @@ export async function doCheckIn(userId: number) {
 
 export async function fetchRecommendations(userId: number) {
   const res = await apiFetch(`/api/recommendations?userId=${userId}`);
+  return res.json();
+}
+
+export async function fetchCurrentRecommendations(userId: number) {
+  const res = await apiFetch(`/api/recommendations/current?userId=${userId}`);
   return res.json();
 }
 
@@ -176,6 +249,18 @@ export async function generateRecommendations(body: {
   maxDistanceKm?: number;
 }) {
   const res = await apiFetch('/api/recommendations', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+export async function generateDailyRecommendations(body: {
+  userId: number;
+  maxBudget?: number;
+  maxDistanceKm?: number;
+}) {
+  const res = await apiFetch('/api/recommendations/daily', {
     method: 'POST',
     body: JSON.stringify(body),
   });
