@@ -1,0 +1,46 @@
+# noinspection YAMLSchemaValidation
+spring:
+  application:
+    name: JavaDiet
+  config:
+    import: optional:classpath:application-local.yaml
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/JavaDiet?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+meituan:
+  # Do not paste cookies here. Login happens in the warmed Chrome profile; signed requests are captured from it.
+  chrome:
+    binary-path: ${MEITUAN_CHROME_BINARY_PATH:}
+    user-data-dir: ${MEITUAN_CHROME_USER_DATA_DIR:.chrome-meituan-profile}
+    profile-directory: ${MEITUAN_CHROME_PROFILE_DIRECTORY:Default}
+    debugger-address: ${MEITUAN_CHROME_DEBUGGER_ADDRESS:}
+    remote-debugging-port: ${MEITUAN_CHROME_REMOTE_DEBUGGING_PORT:9222}
+
+llm:
+  gateway:
+    enabled: ${LLM_GATEWAY_ENABLED:true}
+    base-url: ${LLM_GATEWAY_BASE_URL:https://api.deepseek.com}
+    api-key: ${LLM_GATEWAY_API_KEY:}
+    model: ${LLM_GATEWAY_MODEL:deepseek-v4-flash}
+    temperature: ${LLM_GATEWAY_TEMPERATURE:0.1}
+    timeout-seconds: ${LLM_GATEWAY_TIMEOUT_SECONDS:60}
+    json-mode: ${LLM_GATEWAY_JSON_MODE:true}
+
+nutrition:
+  fdc:
+    api-key: ${FDC_API_KEY:}
+    data-types:
+      - Foundation
+      - SR Legacy
+      - FNDDS
+    max-candidates: ${FDC_MAX_CANDIDATES:6}

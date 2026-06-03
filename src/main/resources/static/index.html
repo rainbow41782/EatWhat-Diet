@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>用户登录与数据展示</title>
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+            color: #1f2937;
+            background: #f4f6f8;
+        }
+
+        body {
+            margin: 0;
+        }
+
+        main {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 32px 20px;
+        }
+
+        h1 {
+            margin: 0 0 18px;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        h2 {
+            margin: 0 0 14px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 18px;
+            align-items: start;
+        }
+
+        .panel {
+            overflow-x: auto;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+
+        .login-panel {
+            padding: 18px;
+        }
+
+        .field {
+            display: grid;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        label {
+            color: #475569;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+            background: #fff;
+        }
+
+        button {
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #fff;
+            background: #2563eb;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            color: #1f2937;
+            background: #e5e7eb;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .toolbar input {
+            max-width: 320px;
+        }
+
+        table {
+            width: 100%;
+            min-width: 860px;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 12px 14px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        th {
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 700;
+        }
+
+        tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            color: #166534;
+            background: #dcfce7;
+            font-size: 12px;
+        }
+
+        .message {
+            margin-top: 12px;
+            color: #64748b;
+            font-size: 14px;
+            line-height: 1.5;
+            word-break: break-all;
+        }
+
+        .error {
+            color: #b91c1c;
+        }
+
+        .success {
+            color: #166534;
+        }
+
+        @media (max-width: 860px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>用户登录与数据库数据展示</h1>
+    <div class="layout">
+        <section class="panel login-panel">
+            <h2>登录验证</h2>
+            <div class="field">
+                <label for="username">账号</label>
+                <input id="username" value="user001" autocomplete="username">
+            </div>
+            <div class="field">
+                <label for="password">密码</label>
+                <input id="password" type="password" value="123456" autocomplete="current-password">
+            </div>
+            <div class="button-row">
+                <button id="loginBtn" type="button">登录</button>
+                <button id="logoutBtn" class="secondary" type="button">登出</button>
+            </div>
+            <div id="loginMessage" class="message"></div>
+        </section>
+
+        <section>
+            <div class="toolbar">
+                <input id="keyword" placeholder="输入账号、昵称、手机号或邮箱搜索">
+                <button id="searchBtn" type="button">查询</button>
+            </div>
+            <div class="panel">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>账号</th>
+                        <th>昵称</th>
+                        <th>角色</th>
+                        <th>性别</th>
+                        <th>年龄</th>
+                        <th>手机号</th>
+                        <th>邮箱</th>
+                        <th>地址</th>
+                        <th>状态</th>
+                    </tr>
+                    </thead>
+                    <tbody id="userRows"></tbody>
+                </table>
+            </div>
+            <div id="listMessage" class="message"></div>
+        </section>
+    </div>
+</main>
+
+<script>
+    const rows = document.querySelector("#userRows");
+    const listMessage = document.querySelector("#listMessage");
+    const loginMessage = document.querySelector("#loginMessage");
+    const keyword = document.querySelector("#keyword");
+    const username = document.querySelector("#username");
+    const password = document.querySelector("#password");
+    const searchBtn = document.querySelector("#searchBtn");
+    const loginBtn = document.querySelector("#loginBtn");
+    const logoutBtn = document.querySelector("#logoutBtn");
+    let currentToken = "";
+
+    function text(value) {
+        return value === null || value === undefined || value === "" ? "-" : String(value);
+    }
+
+    function escapeHtml(value) {
+        return text(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    function render(users) {
+        rows.innerHTML = users.map(user => `
+            <tr>
+                <td>${escapeHtml(user.id)}</td>
+                <td>${escapeHtml(user.username)}</td>
+                <td>${escapeHtml(user.nickname)}</td>
+                <td>${escapeHtml(user.role)}</td>
+                <td>${escapeHtml(user.gender)}</td>
+                <td>${escapeHtml(user.age)}</td>
+                <td>${escapeHtml(user.phone)}</td>
+                <td>${escapeHtml(user.email)}</td>
+                <td>${escapeHtml(user.address)}</td>
+                <td><span class="status">${escapeHtml(user.status)}</span></td>
+            </tr>
+        `).join("");
+        listMessage.className = "message success";
+        listMessage.textContent = `已从数据库读取 ${users.length} 条用户信息`;
+    }
+
+    async function requestJson(url, options = {}) {
+        const response = await fetch(url, options);
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || "请求失败");
+        }
+        return result.data;
+    }
+
+    async function loadUsers() {
+        const params = new URLSearchParams();
+        if (keyword.value.trim()) {
+            params.set("keyword", keyword.value.trim());
+        }
+        const url = params.toString() ? `/api/users?${params}` : "/api/users";
+        const users = await requestJson(url);
+        render(users);
+    }
+
+    async function login() {
+        if (!username.value.trim() || !password.value.trim()) {
+            loginMessage.className = "message error";
+            loginMessage.textContent = "请输入账号和密码";
+            return;
+        }
+        const data = await requestJson("/api/auth/login", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                username: username.value.trim(),
+                password: password.value
+            })
+        });
+        currentToken = data.token;
+        loginMessage.className = "message success";
+        loginMessage.textContent = `登录成功：${data.user.username}，token=${currentToken}`;
+    }
+
+    async function logout() {
+        if (!currentToken) {
+            loginMessage.className = "message error";
+            loginMessage.textContent = "当前没有登录 token";
+            return;
+        }
+        await requestJson("/api/auth/logout", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({token: currentToken})
+        });
+        currentToken = "";
+        loginMessage.className = "message success";
+        loginMessage.textContent = "登出成功";
+    }
+
+    searchBtn.addEventListener("click", () => {
+        loadUsers().catch(error => {
+            listMessage.className = "message error";
+            listMessage.textContent = error.message;
+        });
+    });
+    keyword.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+            searchBtn.click();
+        }
+    });
+    loginBtn.addEventListener("click", () => {
+        login().catch(error => {
+            loginMessage.className = "message error";
+            loginMessage.textContent = error.message;
+        });
+    });
+    logoutBtn.addEventListener("click", () => {
+        logout().catch(error => {
+            loginMessage.className = "message error";
+            loginMessage.textContent = error.message;
+        });
+    });
+
+    loadUsers().catch(error => {
+        listMessage.className = "message error";
+        listMessage.textContent = error.message;
+    });
+</script>
+</body>
+</html>
