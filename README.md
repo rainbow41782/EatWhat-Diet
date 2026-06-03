@@ -190,7 +190,7 @@ npm run dev
 
 ## 关闭服务
 
-- **后端**：在运行 `mvnw spring-boot:run` 的终端按 `Ctrl + C`
+- **后端**：在运行 `.\mvnw spring-boot:run` 的终端按 `Ctrl + C`
 - **前端**：在运行 `npm run dev` 的终端按 `Ctrl + C`
 - **后台管理端**：在运行 `npm run dev` 的终端按 `Ctrl + C`
 

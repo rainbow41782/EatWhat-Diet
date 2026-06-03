@@ -713,7 +713,8 @@ public class RecommendationServiceImpl implements RecommendationService {
             if (today.equals(date)) {
                 FoodItem food = foods.get(intake.getFoodItemId());
                 if (food != null) {
-                    todayCategoryCounts.merge(normalizeCategory(food.getCategory()), 1, Integer::sum);
+                    String category = normalizeCategory(food.getCategory());
+                    todayCategoryCounts.put(category, todayCategoryCounts.getOrDefault(category, 0) + 1);
                 }
             }
         }
@@ -751,8 +752,6 @@ public class RecommendationServiceImpl implements RecommendationService {
                 .collect(Collectors.toMap(Recommendation::getId, recommendation -> recommendation, (a, b) -> a, LinkedHashMap::new));
         List<Long> recommendationIds = recommendationsById.keySet().stream().toList();
         List<RecommendationFoodItem> links = recommendationFoodItemRepository.findByRecommendationIdIn(recommendationIds);
-        Map<Long, List<RecommendationFoodItem>> linksByRecommendation = links.stream()
-                .collect(Collectors.groupingBy(RecommendationFoodItem::getRecommendationId));
 
         Set<Long> foodIds = links.stream()
                 .map(RecommendationFoodItem::getFoodItemId)

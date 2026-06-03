@@ -5,6 +5,7 @@ import { Camera, Lock, Plus, RefreshCw, Save, UserCircle2 } from 'lucide-react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { getAuth } from '@/lib/auth';
 import { addBodyMeasurement, changeUserPassword, fetchBodyMeasurements, fetchUser, fetchUserProfile, updateUserBasic, updateUserProfile } from '@/lib/api';
 
@@ -292,13 +293,22 @@ export default function ProfilePage() {
               <div className="grid sm:grid-cols-2 gap-2">
                 <input className="h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none" placeholder="昵称" value={basicForm.nickname} onChange={(e) => setBasicForm((prev) => ({ ...prev, nickname: e.target.value }))} />
                 <input className="h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none" placeholder="邮箱" value={basicForm.email} onChange={(e) => setBasicForm((prev) => ({ ...prev, email: e.target.value }))} />
-                <select className="h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none" value={basicForm.gender} onChange={(e) => setBasicForm((prev) => ({ ...prev, gender: e.target.value as BasicForm['gender'] }))}>
-                  <option value="">性别</option>
-                  <option value="MALE">男</option>
-                  <option value="FEMALE">女</option>
-                  <option value="OTHER">其他</option>
-                  <option value="UNKNOWN">不愿透露</option>
-                </select>
+                <Select
+                  value={basicForm.gender}
+                  onValueChange={(v) => setBasicForm((prev) => ({ ...prev, gender: v as BasicForm['gender'] }))}
+                >
+                  <SelectTrigger
+                    placeholder="性别"
+                    className="w-full min-w-0 text-sm"
+                  />
+                  <SelectContent>
+                    <SelectItem index={0} value="">性别</SelectItem>
+                    <SelectItem index={1} value="MALE">男</SelectItem>
+                    <SelectItem index={2} value="FEMALE">女</SelectItem>
+                    <SelectItem index={3} value="OTHER">其他</SelectItem>
+                    <SelectItem index={4} value="UNKNOWN">不愿透露</SelectItem>
+                  </SelectContent>
+                </Select>
                 <input className="h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white outline-none" placeholder="年龄" value={basicForm.age} onChange={(e) => setBasicForm((prev) => ({ ...prev, age: e.target.value }))} />
               </div>
               <button disabled={savingBasic} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-semibold transition disabled:opacity-70">

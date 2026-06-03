@@ -3,6 +3,8 @@ package cn.edu.cn.javadiet.service;
 import cn.edu.cn.javadiet.model.dto.LocationUpdateRequest;
 import cn.edu.cn.javadiet.model.dto.LoginRequest;
 import cn.edu.cn.javadiet.model.dto.LoginResponse;
+import cn.edu.cn.javadiet.model.dto.NutritionPlanPreviewRequest;
+import cn.edu.cn.javadiet.model.dto.NutritionPlanResult;
 import cn.edu.cn.javadiet.model.dto.RegisterRequest;
 import cn.edu.cn.javadiet.model.dto.UpdateUserBasicRequest;
 import cn.edu.cn.javadiet.model.entity.User;
@@ -23,6 +25,8 @@ public interface UserService {
     Optional<User> findById(Long userId);
 
     Optional<UserProfile> findProfile(Long userId);
+
+    NutritionPlanResult previewNutritionPlan(Long userId, NutritionPlanPreviewRequest request);
 
     List<User> findUsers(String keyword);
 

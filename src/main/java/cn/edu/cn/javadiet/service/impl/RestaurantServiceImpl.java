@@ -22,16 +22,19 @@ public class RestaurantServiceImpl implements RestaurantService {
     private final FoodItemRepository foodItemRepository;
     private final RestaurantFoodItemRepository restaurantFoodItemRepository;
     private final LocationService locationService;
+    private final TencentPlaceClient tencentPlaceClient;
 
     public RestaurantServiceImpl(
             RestaurantRepository restaurantRepository,
             FoodItemRepository foodItemRepository,
             RestaurantFoodItemRepository restaurantFoodItemRepository,
-            LocationService locationService) {
+            LocationService locationService,
+            TencentPlaceClient tencentPlaceClient) {
         this.restaurantRepository = restaurantRepository;
         this.foodItemRepository = foodItemRepository;
         this.restaurantFoodItemRepository = restaurantFoodItemRepository;
         this.locationService = locationService;
+        this.tencentPlaceClient = tencentPlaceClient;
     }
 
     @Override
@@ -54,6 +57,15 @@ public class RestaurantServiceImpl implements RestaurantService {
 
     @Override
     public List<Restaurant> findNearby(NearbyRestaurantQuery query) {
+        if (tencentPlaceClient.isConfigured()) {
+            List<Restaurant> externalResults = tencentPlaceClient.searchNearby(
+                    query.getLatitude(),
+                    query.getLongitude(),
+                    query.getMaxDistanceKm());
+            if (!externalResults.isEmpty()) {
+                return externalResults;
+            }
+        }
         return restaurantRepository.findAll().stream()
                 .filter(item -> !Boolean.TRUE.equals(query.getOnlyOpen()) || item.getStatus() == RestaurantStatus.OPEN)
                 .filter(item -> item.getLatitude() != null && item.getLongitude() != null)

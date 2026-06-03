@@ -135,6 +135,21 @@ export async function updateUserProfile(userId: number, profile: Record<string, 
   return res.json();
 }
 
+export async function fetchNutritionPlanPreview(userId: number, body: {
+  gender?: string;
+  age?: number;
+  heightCm?: number;
+  weightKg?: number;
+  healthGoal?: string;
+  activityLevel?: string;
+}) {
+  const res = await apiFetch(`/api/users/${userId}/nutrition-plan-preview`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
 export async function updateUserBasic(userId: number, basic: Record<string, unknown>) {
   const res = await apiFetch(`/api/users/${userId}/basic`, {
     method: 'PATCH',
@@ -305,5 +320,11 @@ export async function fetchNearbyRestaurants(params: {
     onlyOpen: String(params.onlyOpen ?? true),
   });
   const res = await apiFetch(`/api/restaurants/nearby?${q}`);
+  return res.json();
+}
+
+export async function fetchTencentIpLocation(ip?: string) {
+  const q = ip ? `?ip=${encodeURIComponent(ip)}` : '';
+  const res = await apiFetch(`/api/restaurants/locate/tencent-ip${q}`);
   return res.json();
 }

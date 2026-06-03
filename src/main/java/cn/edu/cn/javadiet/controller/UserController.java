@@ -3,6 +3,8 @@ package cn.edu.cn.javadiet.controller;
 import cn.edu.cn.javadiet.common.ApiResponse;
 import cn.edu.cn.javadiet.model.dto.ChangePasswordRequest;
 import cn.edu.cn.javadiet.model.dto.LocationUpdateRequest;
+import cn.edu.cn.javadiet.model.dto.NutritionPlanPreviewRequest;
+import cn.edu.cn.javadiet.model.dto.NutritionPlanResult;
 import cn.edu.cn.javadiet.model.dto.UpdateUserBasicRequest;
 import cn.edu.cn.javadiet.model.entity.User;
 import cn.edu.cn.javadiet.model.entity.UserProfile;
@@ -10,6 +12,7 @@ import cn.edu.cn.javadiet.service.UserService;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -50,6 +53,13 @@ public class UserController {
             @PathVariable Long userId,
             @RequestBody UserProfile profile) {
         return ResponseEntity.ok(ApiResponse.ok(userService.updateProfile(userId, profile)));
+    }
+
+    @PostMapping("/{userId}/nutrition-plan-preview")
+    public ResponseEntity<ApiResponse<NutritionPlanResult>> previewNutritionPlan(
+            @PathVariable Long userId,
+            @RequestBody NutritionPlanPreviewRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok(userService.previewNutritionPlan(userId, request)));
     }
 
     @PatchMapping("/{userId}/location")

@@ -44,3 +44,15 @@ nutrition:
       - SR Legacy
       - FNDDS
     max-candidates: ${FDC_MAX_CANDIDATES:6}
+
+map:
+  tencent:
+    enabled: ${TENCENT_MAP_ENABLED:false}
+    key: ${TENCENT_MAP_KEY:}
+    keyword: ${TENCENT_MAP_KEYWORD:餐厅}
+    category-codes: ${TENCENT_MAP_CATEGORY_CODES:100000,101600,102000,102600,102800,161300,161500}
+    page-size: ${TENCENT_MAP_PAGE_SIZE:20}
+    max-pages-per-category: ${TENCENT_MAP_MAX_PAGES_PER_CATEGORY:5}
+    max-results: ${TENCENT_MAP_MAX_RESULTS:120}
+    auto-extend: ${TENCENT_MAP_AUTO_EXTEND:true}
+    timeout-seconds: ${TENCENT_MAP_TIMEOUT_SECONDS:8}

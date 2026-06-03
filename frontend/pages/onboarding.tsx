@@ -4,20 +4,20 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import { useRouter } from 'next/router';
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
 import { getAuth } from '@/lib/auth';
-import { updateUserBasic, updateUserProfile, fetchUser } from '@/lib/api';
+import { updateUserBasic, updateUserProfile, fetchNutritionPlanPreview, fetchUser } from '@/lib/api';
 
 type GoalKey = 'rapid_fat_loss' | 'high_intensity_fat_loss' | 'daily_fat_loss' | 'lean_bulk' | 'bulk' | 'maintain' | 'increase_strength' | 'improve_performance';
-type GoalConfig = { label: string; desc: string; calorieFactor: number; proteinMode: 'lbm' | 'weight'; proteinFactor: number; fatFactor: number; durationMin: number; durationMax: number; };
+type GoalConfig = { label: string; desc: string };
 
 const GOAL_CONFIGS: Record<GoalKey, GoalConfig> = {
-  rapid_fat_loss:          { label: '极速减脂', desc: '最高强度缺口，短期冲刺（≤4 周）',    calorieFactor: 0.80, proteinMode: 'lbm',    proteinFactor: 2.6, fatFactor: 0.6,  durationMin: 1,  durationMax: 4  },
-  high_intensity_fat_loss: { label: '强力减脂', desc: '稳健高效的热量缺口（8-16 周）',      calorieFactor: 0.85, proteinMode: 'lbm',    proteinFactor: 2.4, fatFactor: 0.65, durationMin: 8,  durationMax: 16 },
-  daily_fat_loss:          { label: '日常减脂', desc: '温和缺口，适合长期坚持（15-20 周）', calorieFactor: 0.90, proteinMode: 'lbm',    proteinFactor: 2.2, fatFactor: 0.7,  durationMin: 15, durationMax: 20 },
-  lean_bulk:               { label: '精益增肌', desc: '最小化体脂增加的增肌方案',            calorieFactor: 1.05, proteinMode: 'weight', proteinFactor: 2.0, fatFactor: 0.8,  durationMin: 8,  durationMax: 12 },
-  bulk:                    { label: '增重增肌', desc: '较大盈余，加速肌肉增长',              calorieFactor: 1.12, proteinMode: 'weight', proteinFactor: 1.9, fatFactor: 0.9,  durationMin: 8,  durationMax: 12 },
-  maintain:                { label: '维持体重', desc: '保持现有身体成分',                    calorieFactor: 1.00, proteinMode: 'weight', proteinFactor: 1.8, fatFactor: 0.8,  durationMin: 1,  durationMax: 52 },
-  increase_strength:       { label: '提升力量', desc: '支持力量训练周期（6-8 周）',          calorieFactor: 1.03, proteinMode: 'weight', proteinFactor: 1.8, fatFactor: 0.7,  durationMin: 6,  durationMax: 8  },
-  improve_performance:     { label: '提升表现', desc: '高碳水优化运动表现（8-16 周）',       calorieFactor: 1.05, proteinMode: 'weight', proteinFactor: 1.7, fatFactor: 0.65, durationMin: 8,  durationMax: 16 },
+  rapid_fat_loss:          { label: '极速减脂', desc: '最高强度缺口，短期冲刺（≤4 周）' },
+  high_intensity_fat_loss: { label: '强力减脂', desc: '稳健高效的热量缺口（8-16 周）' },
+  daily_fat_loss:          { label: '日常减脂', desc: '温和缺口，适合长期坚持（15-20 周）' },
+  lean_bulk:               { label: '精益增肌', desc: '最小化体脂增加的增肌方案' },
+  bulk:                    { label: '增重增肌', desc: '较大盈余，加速肌肉增长' },
+  maintain:                { label: '维持体重', desc: '保持现有身体成分' },
+  increase_strength:       { label: '提升力量', desc: '支持力量训练周期（6-8 周）' },
+  improve_performance:     { label: '提升表现', desc: '高碳水优化运动表现（8-16 周）' },
 };
 
 const ACTIVITY_LEVELS = [
@@ -38,18 +38,6 @@ type ProfileForm = {
   dietPreference?: string;
   allergies?: string;
   dislikedFoods?: string;
-  dailyCalorieTarget?: number;
-  dailyProteinTarget?: number;
-  dailyFatTarget?: number;
-  dailyCarbTarget?: number;
-};
-
-const ACTIVITY_MULTIPLIERS: Record<string, number> = {
-  SEDENTARY: 1.2,
-  LIGHTLY_ACTIVE: 1.375,
-  MODERATELY_ACTIVE: 1.55,
-  VERY_ACTIVE: 1.725,
-  EXTRA_ACTIVE: 1.9,
 };
 
 type NutritionResult = {
@@ -57,57 +45,8 @@ type NutritionResult = {
   targetCalories: number; calorieDelta: number;
   protein: number; fat: number; carb: number;
   macroRatio: { protein: number; fat: number; carb: number };
-  durationMin: number; durationMax: number; goalLabel: string;
+  durationMin: number; durationMax: number;
 };
-
-function computeTargets(form: ProfileForm): NutritionResult | null {
-  const { heightCm, weightKg, gender, age, activityLevel, healthGoal } = form;
-  if (!heightCm || !weightKg || !gender || !age || !healthGoal) return null;
-  const config = GOAL_CONFIGS[healthGoal as GoalKey];
-  if (!config) return null;
-
-  // BMI → Deurenberg BF% (Asian +5%) → LBM → Katch-McArdle BMR
-  const heightM = heightCm / 100;
-  const bmi = weightKg / (heightM * heightM);
-  const sex = gender === 'MALE' ? 1 : 0;
-  let bfPct = 1.20 * bmi + 0.23 * age - 10.8 * sex - 5.4 + 5;
-  bfPct = Math.max(5, Math.min(50, bfPct));
-  const lbm = weightKg * (1 - bfPct / 100);
-  const bmr = 370 + 21.6 * lbm;
-
-  // TDEE
-  const tdee = bmr * (ACTIVITY_MULTIPLIERS[activityLevel ?? ''] ?? 1.2);
-
-  // Calorie target with floor: max(bmr * 1.2, 1200)
-  const targetCalories = Math.round(Math.max(tdee * config.calorieFactor, bmr * 1.2, 1200));
-
-  // Protein: lbm mode for fat-loss goals, total weight for others
-  const proteinBase = config.proteinMode === 'lbm' ? lbm : weightKg;
-  const protein = Math.round(config.proteinFactor * proteinBase);
-
-  // Fat with floor: weightKg * 0.5
-  const fat = Math.round(Math.max(config.fatFactor * weightKg, weightKg * 0.5));
-
-  // Carbs (floor 0)
-  const carb = Math.max(0, Math.round((targetCalories - protein * 4 - fat * 9) / 4));
-
-  // Macro ratio %
-  const totalKcal = protein * 4 + fat * 9 + carb * 4;
-  const macroRatio = {
-    protein: Math.round((protein * 4 / totalKcal) * 100),
-    fat:     Math.round((fat     * 9 / totalKcal) * 100),
-    carb:    Math.round((carb    * 4 / totalKcal) * 100),
-  };
-
-  return {
-    bmr: Math.round(bmr), tdee: Math.round(tdee),
-    lbm: Math.round(lbm * 10) / 10, bfPct: Math.round(bfPct),
-    targetCalories, calorieDelta: Math.round(targetCalories - tdee),
-    protein, fat, carb, macroRatio,
-    durationMin: config.durationMin, durationMax: config.durationMax,
-    goalLabel: config.label,
-  };
-}
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
@@ -128,6 +67,9 @@ export default function OnboardingPage() {
   const [form, setForm] = useState<ProfileForm>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [planPreview, setPlanPreview] = useState<NutritionResult | null>(null);
+  const [planPreviewLoading, setPlanPreviewLoading] = useState(false);
+  const [planPreviewError, setPlanPreviewError] = useState('');
 
   // 卡片倾斜动画 — 与登录/注册页保持一致
   const mouseX = useMotionValue(0);
@@ -173,7 +115,114 @@ export default function OnboardingPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const hasRequiredFields = (data: ProfileForm) => {
+    const hasGender = data.gender === 'MALE' || data.gender === 'FEMALE';
+    const hasAge = Number.isFinite(data.age) && (data.age ?? 0) >= 10;
+    const hasHeight = Number.isFinite(data.heightCm) && (data.heightCm ?? 0) > 0;
+    const hasWeight = Number.isFinite(data.weightKg) && (data.weightKg ?? 0) > 0;
+    const hasGoal = typeof data.healthGoal === 'string' && data.healthGoal.length > 0;
+    const hasActivity = typeof data.activityLevel === 'string' && data.activityLevel.length > 0;
+    return hasGender && hasAge && hasHeight && hasWeight && hasGoal && hasActivity;
+  };
+
+  useEffect(() => {
+    if (step !== 4) return;
+    const auth = getAuth();
+    if (!auth) {
+      setPlanPreview(null);
+      setPlanPreviewError('登录状态已失效，请重新登录后再试');
+      return;
+    }
+
+    if (!hasRequiredFields(form)) {
+      setPlanPreview(null);
+      setPlanPreviewError('请完善前面的信息后自动计算');
+      return;
+    }
+
+    let cancelled = false;
+    setPlanPreviewError('');
+    setPlanPreviewLoading(true);
+    fetchNutritionPlanPreview(auth.userId, {
+      gender: form.gender,
+      age: form.age,
+      heightCm: form.heightCm,
+      weightKg: form.weightKg,
+      healthGoal: form.healthGoal.toUpperCase(),
+      activityLevel: form.activityLevel,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const data = res?.data;
+        if (!data) {
+          setPlanPreview(null);
+          setPlanPreviewError('暂时无法获取营养目标，请稍后重试');
+          return;
+        }
+        setPlanPreview({
+          bmr: Number(data.bmr ?? 0),
+          tdee: Number(data.tdee ?? 0),
+          lbm: Number(data.leanBodyMassKg ?? 0),
+          bfPct: Number(data.estimatedBodyFatPct ?? 0),
+          targetCalories: Number(data.targetCalories ?? 0),
+          calorieDelta: Number(data.calorieDelta ?? 0),
+          protein: Number(data.targetProtein ?? 0),
+          fat: Number(data.targetFat ?? 0),
+          carb: Number(data.targetCarb ?? 0),
+          macroRatio: {
+            protein: Number(data.macroProteinPct ?? 0),
+            fat: Number(data.macroFatPct ?? 0),
+            carb: Number(data.macroCarbPct ?? 0),
+          },
+          durationMin: Number(data.durationMinWeeks ?? 0),
+          durationMax: Number(data.durationMaxWeeks ?? 0),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPlanPreview(null);
+          setPlanPreviewError('后端计算失败，请检查网络或稍后重试');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPlanPreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, form]);
+
+  const canSubmit = hasRequiredFields(form);
+
+  const goNext = () => {
+    if (step === 0) {
+      const baseReady = (form.gender === 'MALE' || form.gender === 'FEMALE')
+        && Number.isFinite(form.age)
+        && Number.isFinite(form.heightCm)
+        && Number.isFinite(form.weightKg);
+      if (!baseReady) {
+        setError('请先填写完整的基础身体数据');
+        return;
+      }
+    }
+    if (step === 1 && !form.healthGoal) {
+      setError('请先选择健康目标');
+      return;
+    }
+    if (step === 2 && !form.activityLevel) {
+      setError('请先选择活动水平');
+      return;
+    }
+    setError('');
+    setStep((s) => s + 1);
+  };
+
   const handleSubmit = async () => {
+    if (!canSubmit) {
+      setError('请先完整填写基础数据、健康目标和活动水平');
+      return;
+    }
     setIsSubmitting(true);
     setError('');
     try {
@@ -185,16 +234,9 @@ export default function OnboardingPage() {
         await updateUserBasic(auth.userId, { gender: form.gender, age: form.age });
       }
 
-      // Compute macro targets from formula
-      const computed = computeTargets(form);
-      // 提交时 healthGoal 从小写 key 转为后端枚举所需的大写
       const profileData = {
         ...form,
         healthGoal: form.healthGoal?.toUpperCase(),
-        dailyCalorieTarget: computed?.targetCalories,
-        dailyProteinTarget: computed?.protein,
-        dailyFatTarget:     computed?.fat,
-        dailyCarbTarget:    computed?.carb,
       };
 
       await updateUserProfile(auth.userId, profileData as Record<string, unknown>);
@@ -339,8 +381,9 @@ export default function OnboardingPage() {
         <p className="text-sm text-blue-400 cursor-pointer hover:text-blue-300 transition-colors">摄入太高/太低？</p>
       </div>
       {(() => {
-        const r = computeTargets(form);
-        if (!r) return <p className="text-center text-sm text-white/40 py-4">请完善前面的信息后自动计算</p>;
+        const r = planPreview;
+        if (planPreviewLoading) return <p className="text-center text-sm text-white/40 py-4">正在使用后端公式计算...</p>;
+        if (!r) return <p className="text-center text-sm text-white/40 py-4">{planPreviewError || '请完善前面的信息后自动计算'}</p>;
         const sign = r.calorieDelta >= 0 ? '+' : '';
         const dur = r.durationMin === r.durationMax ? `${r.durationMin} 周` : `${r.durationMin}–${r.durationMax} 周`;
         return (
@@ -451,7 +494,7 @@ export default function OnboardingPage() {
                 {step < steps.length - 1 ? (
                   <button
                     type="button"
-                    onClick={() => setStep((s) => s + 1)}
+                    onClick={goNext}
                     className="flex-1 h-11 rounded-xl bg-emerald-500 text-sm font-semibold text-white hover:bg-emerald-400 transition-all active:scale-[0.98]"
                   >
                     下一步
