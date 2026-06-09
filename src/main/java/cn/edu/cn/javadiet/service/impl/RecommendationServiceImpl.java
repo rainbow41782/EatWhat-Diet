@@ -123,7 +123,7 @@ public class RecommendationServiceImpl implements RecommendationService {
     public List<RecommendationResponse> generate(RecommendationRequest request) {
         User user = requireUser(request);
         MealType mealType = request.getTargetMealType() == null ? inferCurrentMealType() : request.getTargetMealType();
-        return generateForMeal(request, user, mealType, UUID.randomUUID().toString(), Set.of());
+        return generateForMeal(request, user, mealType, UUID.randomUUID().toString(), Set.of(), true);
     }
 
     @Override
@@ -134,7 +134,8 @@ public class RecommendationServiceImpl implements RecommendationService {
         Set<Long> excludedFoodIds = new HashSet<>(currentFoodIds(user.getId()));
         List<RecommendationResponse> responses = new ArrayList<>();
         for (MealType mealType : MEAL_ORDER) {
-            List<RecommendationResponse> mealResponses = generateForMeal(request, user, mealType, batchId, excludedFoodIds);
+            // Daily generation should be responsive even when external LLM is slow or unavailable.
+            List<RecommendationResponse> mealResponses = generateForMeal(request, user, mealType, batchId, excludedFoodIds, false);
             mealResponses.stream()
                     .flatMap(response -> response.getItems().stream())
                     .map(RecommendationFoodItemResponse::getFoodItemId)
@@ -190,7 +191,8 @@ public class RecommendationServiceImpl implements RecommendationService {
             User user,
             MealType mealType,
             String batchId,
-            Set<Long> excludedFoodIds) {
+            Set<Long> excludedFoodIds,
+            boolean useLlmSelection) {
         UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElse(null);
         LocalDate today = LocalDate.now();
         DailyCheckIn todayCheckIn = dailyCheckInRepository.findByUserIdAndCheckDate(user.getId(), today).orElse(null);
@@ -204,7 +206,9 @@ public class RecommendationServiceImpl implements RecommendationService {
             return List.of();
         }
 
-        List<Candidate> selected = llmEnhancedSelection(user, profile, history, targets, mealType, localCandidates);
+        List<Candidate> selected = useLlmSelection
+            ? llmEnhancedSelection(user, profile, history, targets, mealType, localCandidates)
+            : List.of();
         if (selected.isEmpty()) {
             selected = selectWithDiversity(localCandidates, RESULT_LIMIT);
         }
