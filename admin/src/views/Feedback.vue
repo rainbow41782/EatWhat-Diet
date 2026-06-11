@@ -1,8 +1,7 @@
 <template>
   <div class="page">
-    <!-- 查询栏 -->
     <div class="toolbar">
-      <span class="query-label">按用户 ID 查询反馈</span>
+      <span class="query-label">用户反馈</span>
       <el-input-number
         v-model="userId"
         :min="1"
@@ -11,118 +10,127 @@
         controls-position="right"
       />
       <el-button type="primary" :icon="Search" :loading="loading" @click="loadFeedback">
-        查询
+        按用户查询
       </el-button>
-      <el-button :icon="Refresh" @click="reset">重置</el-button>
+      <el-button :icon="Refresh" :loading="loading" @click="loadAllFeedback">查看全部</el-button>
     </div>
 
-    <el-alert
-      v-if="!queried"
-      title="请输入用户 ID 后点击「查询」以查看该用户的全部反馈记录"
-      type="info"
-      :closable="false"
-      show-icon
-      class="info-alert"
-    />
+    <el-card class="table-card" shadow="never">
+      <div class="table-header">
+        <span class="result-count">{{ listTitle }}</span>
+      </div>
 
-    <!-- 反馈列表 -->
-    <template v-if="queried">
-      <el-card class="table-card" shadow="never">
-        <div class="table-header">
-          <span class="result-count">用户 #{{ queriedId }} 的反馈共 {{ feedbacks.length }} 条</span>
-        </div>
+      <el-empty v-if="!loading && feedbacks.length === 0" description="暂无反馈记录" class="empty" />
 
-        <el-empty v-if="!loading && feedbacks.length === 0" description="该用户暂无反馈记录" class="empty" />
+      <div v-else v-loading="loading" class="feedback-list">
+        <div
+          v-for="fb in feedbacks"
+          :key="fb.id"
+          class="feedback-item"
+          :class="`type-${String(fb.feedbackType || '').toLowerCase()}`"
+        >
+          <div class="fb-header">
+            <el-tag :type="typeColor(fb.feedbackType)" size="small" class="fb-type">
+              {{ typeLabel(fb.feedbackType) }}
+            </el-tag>
+            <span class="fb-id">#{{ fb.id }}</span>
+            <span class="fb-time">{{ formatDate(fb.createdAt) }}</span>
+          </div>
 
-        <div v-else class="feedback-list">
-          <div
-            v-for="fb in feedbacks"
-            :key="fb.id"
-            class="feedback-item"
-            :class="{ 'type-bug': fb.feedbackType === 'BUG', 'type-suggestion': fb.feedbackType === 'SUGGESTION' }"
-          >
-            <div class="fb-header">
-              <el-tag :type="typeColor(fb.feedbackType)" size="small" class="fb-type">
-                {{ typeLabel(fb.feedbackType) }}
-              </el-tag>
-              <span class="fb-id">#{{ fb.id }}</span>
-              <span class="fb-time">{{ formatDate(fb.createdAt) }}</span>
-            </div>
-            <p class="fb-content">{{ fb.content }}</p>
-            <div class="fb-footer" v-if="fb.contact">
-              <span class="fb-contact">联系方式：{{ fb.contact }}</span>
-            </div>
+          <p class="fb-content">{{ fb.content || '-' }}</p>
+
+          <div class="fb-meta">
+            <span>{{ fb.userId ? `用户 #${fb.userId}` : '匿名用户' }}</span>
+            <span v-if="fb.recommendationId">推荐 #{{ fb.recommendationId }}</span>
+            <span v-if="fb.rating">评分 {{ fb.rating }}/5</span>
+            <span v-if="fb.useful !== null && fb.useful !== undefined">
+              {{ fb.useful ? '认为有帮助' : '认为帮助不大' }}
+            </span>
           </div>
         </div>
-      </el-card>
-    </template>
+      </div>
+    </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import { feedbackApi } from '@/api/feedback'
 
-const userId = ref(1)
+const userId = ref(null)
 const loading = ref(false)
 const feedbacks = ref([])
-const queried = ref(false)
-const queriedId = ref(null)
+const filterUserId = ref(null)
 
 const typeMap = {
-  BUG: '问题反馈',
-  SUGGESTION: '功能建议',
-  PRAISE: '使用好评',
-  OTHER: '其他'
+  ACCEPTED: '已采纳',
+  REJECTED: '已忽略',
+  COMMENT: '使用建议',
+  COMPLAINT: '问题反馈'
 }
 const typeColorMap = {
-  BUG: 'danger',
-  SUGGESTION: 'warning',
-  PRAISE: 'success',
-  OTHER: 'info'
+  ACCEPTED: 'success',
+  REJECTED: 'info',
+  COMMENT: 'success',
+  COMPLAINT: 'warning'
 }
 
-function typeLabel(t) { return typeMap[t] || t || '—' }
-function typeColor(t) { return typeColorMap[t] || 'info' }
+const listTitle = computed(() => {
+  if (filterUserId.value) {
+    return `用户 #${filterUserId.value} 的反馈共 ${feedbacks.value.length} 条`
+  }
+  return `全部反馈共 ${feedbacks.value.length} 条`
+})
 
-function formatDate(dt) {
-  if (!dt) return '—'
-  const d = new Date(dt)
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+function typeLabel(type) {
+  return typeMap[type] || type || '-'
 }
 
-async function loadFeedback() {
+function typeColor(type) {
+  return typeColorMap[type] || 'info'
+}
+
+function formatDate(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+async function loadAllFeedback() {
   loading.value = true
-  queried.value = false
   try {
-    const res = await feedbackApi.listByUser(userId.value)
+    const res = await feedbackApi.listAll()
     feedbacks.value = res.data || []
-    queriedId.value = userId.value
-    queried.value = true
+    filterUserId.value = null
   } finally {
     loading.value = false
   }
 }
 
-function reset() {
-  feedbacks.value = []
-  queried.value = false
-  queriedId.value = null
+async function loadFeedback() {
+  if (!userId.value) {
+    await loadAllFeedback()
+    return
+  }
+
+  loading.value = true
+  try {
+    const res = await feedbackApi.listByUser(userId.value)
+    feedbacks.value = res.data || []
+    filterUserId.value = userId.value
+  } finally {
+    loading.value = false
+  }
 }
+
+onMounted(loadAllFeedback)
 </script>
 
 <style scoped>
 .page { display: flex; flex-direction: column; gap: 16px; }
 .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .query-label { font-size: 14px; color: #9ca3af; }
-
-.info-alert {
-  background: rgba(16,185,129,0.06) !important;
-  border: 1px solid rgba(16,185,129,0.2) !important;
-  border-radius: 10px;
-}
-:deep(.el-alert__title) { color: #9ca3af; font-size: 13px; }
 
 .table-card {
   background: #1a1d27 !important;
@@ -137,8 +145,7 @@ function reset() {
 .empty { padding: 40px 0; }
 :deep(.el-empty__description p) { color: #4b5563; }
 
-/* 反馈卡片列表 */
-.feedback-list { display: flex; flex-direction: column; gap: 12px; }
+.feedback-list { display: flex; flex-direction: column; gap: 12px; min-height: 80px; }
 
 .feedback-item {
   background: rgba(255,255,255,0.02);
@@ -149,8 +156,10 @@ function reset() {
   transition: background 0.2s;
 }
 .feedback-item:hover { background: rgba(255,255,255,0.04); }
-.feedback-item.type-bug { border-left-color: #ef4444; }
-.feedback-item.type-suggestion { border-left-color: #f59e0b; }
+.feedback-item.type-complaint { border-left-color: #f59e0b; }
+.feedback-item.type-comment { border-left-color: #10b981; }
+.feedback-item.type-accepted { border-left-color: #22c55e; }
+.feedback-item.type-rejected { border-left-color: #6b7280; }
 
 .fb-header {
   display: flex;
@@ -169,6 +178,13 @@ function reset() {
   word-break: break-word;
 }
 
-.fb-footer { margin-top: 8px; }
-.fb-contact { font-size: 12px; color: #6b7280; }
+.fb-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #6b7280;
+}
 </style>

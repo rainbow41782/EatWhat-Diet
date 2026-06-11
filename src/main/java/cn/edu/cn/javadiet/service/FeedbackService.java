@@ -9,4 +9,6 @@ public interface FeedbackService {
     UserFeedback submit(FeedbackCreateRequest request);
 
     List<UserFeedback> findByUserId(Long userId);
+
+    List<UserFeedback> findAll();
 }

@@ -28,10 +28,10 @@ public class FeedbackServiceImpl implements FeedbackService {
 
     @Override
     public UserFeedback submit(FeedbackCreateRequest request) {
-        if (!userRepository.existsById(request.getUserId())) {
+        if (request.getUserId() != null && !userRepository.existsById(request.getUserId())) {
             throw new IllegalArgumentException("user not found");
         }
-        if (!recommendationRepository.existsById(request.getRecommendationId())) {
+        if (request.getRecommendationId() != null && !recommendationRepository.existsById(request.getRecommendationId())) {
             throw new IllegalArgumentException("recommendation not found");
         }
         if (request.getRating() != null && (request.getRating() < 1 || request.getRating() > 5)) {
@@ -56,5 +56,10 @@ public class FeedbackServiceImpl implements FeedbackService {
             throw new IllegalArgumentException("user not found");
         }
         return userFeedbackRepository.findByUserIdOrderByCreatedAtDesc(userId);
+    }
+
+    @Override
+    public List<UserFeedback> findAll() {
+        return userFeedbackRepository.findAllByOrderByCreatedAtDesc();
     }
 }

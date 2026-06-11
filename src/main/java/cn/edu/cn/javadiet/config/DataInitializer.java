@@ -70,6 +70,8 @@ public class DataInitializer implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         // 修复 food_item_id 列：允许为 null（手动录入时不需要关联食物库）
         jdbcTemplate.execute("ALTER TABLE food_intakes MODIFY COLUMN food_item_id BIGINT NULL");
+        jdbcTemplate.execute("ALTER TABLE user_feedback MODIFY COLUMN user_id BIGINT NULL");
+        jdbcTemplate.execute("ALTER TABLE user_feedback MODIFY COLUMN recommendation_id BIGINT NULL");
 
         // 确保管理员账户存在
         if (!userRepository.existsByUsernameIgnoreCase("admin")) {

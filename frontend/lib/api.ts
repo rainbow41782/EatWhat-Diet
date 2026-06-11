@@ -304,7 +304,17 @@ export async function submitFeedback(body: {
     method: 'POST',
     body: JSON.stringify(body),
   });
-  return res.json();
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = payload && typeof payload === 'object' && 'message' in payload
+      ? String((payload as { message?: unknown }).message || '提交失败')
+      : '提交失败';
+    throw new Error(message);
+  }
+  if (payload && typeof payload === 'object' && (payload as { success?: boolean }).success === false) {
+    throw new Error(String((payload as { message?: unknown }).message || '提交失败'));
+  }
+  return payload;
 }
 
 export async function fetchNearbyRestaurants(params: {

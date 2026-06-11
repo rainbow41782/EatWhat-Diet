@@ -1,10 +1,9 @@
 <template>
   <div class="dashboard">
-    <!-- 统计卡片 -->
-    <div class="stats-grid">
+    <div class="stats-grid" v-loading="loading">
       <div
         v-for="card in statCards"
-        :key="card.label"
+        :key="card.key"
         class="stat-card"
         :style="{ '--card-color': card.color }"
       >
@@ -21,7 +20,6 @@
       </div>
     </div>
 
-    <!-- 快捷入口 -->
     <div class="section-title">快捷管理入口</div>
     <div class="quick-grid">
       <router-link
@@ -37,7 +35,6 @@
       </router-link>
     </div>
 
-    <!-- 系统信息 -->
     <div class="section-title">系统信息</div>
     <el-card class="info-card" shadow="never">
       <el-descriptions :column="3" border>
@@ -50,44 +47,77 @@
         <el-descriptions-item label="管理后台">
           <el-tag size="small">http://localhost:3001</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="技术栈 - 后端">Spring Boot 4 · MySQL 8 · JPA</el-descriptions-item>
-        <el-descriptions-item label="技术栈 - 前台">Next.js 13 · TypeScript · Tailwind</el-descriptions-item>
-        <el-descriptions-item label="技术栈 - 后台">Vue 3 · Element Plus · Axios</el-descriptions-item>
+        <el-descriptions-item label="技术栈 - 后端">Spring Boot 4 / MySQL 8 / JPA</el-descriptions-item>
+        <el-descriptions-item label="技术栈 - 前台">Next.js 13 / TypeScript / Tailwind</el-descriptions-item>
+        <el-descriptions-item label="技术栈 - 后台">Vue 3 / Element Plus / Axios</el-descriptions-item>
       </el-descriptions>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { reactive } from 'vue'
-import { DataLine, User, Bowl, Location, ChatDotRound, ArrowRight, TrendCharts } from '@element-plus/icons-vue'
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { dashboardApi } from '@/api/dashboard'
 
-// 实际项目中可并行请求各统计数据
+const loading = ref(false)
+
 const statCards = reactive([
-  { label: '注册用户', value: '—', icon: 'User', color: '#10b981' },
-  { label: '食品种类', value: '—', icon: 'Bowl', color: '#6366f1' },
-  { label: '收录餐厅', value: '—', icon: 'Location', color: '#f59e0b' },
-  { label: '用户反馈', value: '—', icon: 'ChatDotRound', color: '#ef4444' },
+  { key: 'userCount', label: '注册用户', value: '-', icon: 'User', color: '#10b981' },
+  { key: 'foodCount', label: '食品种类', value: '-', icon: 'Bowl', color: '#6366f1' },
+  { key: 'restaurantCount', label: '收录餐厅', value: '-', icon: 'Location', color: '#f59e0b' },
+  { key: 'feedbackCount', label: '用户反馈', value: '-', icon: 'ChatDotRound', color: '#ef4444' },
 ])
 
 const quickLinks = [
   { to: '/users', icon: 'User', label: '用户管理', desc: '查看、搜索注册用户' },
-  { to: '/foods', icon: 'Bowl', label: '食品管理', desc: '增删改查食品数据库' },
+  { to: '/foods', icon: 'Bowl', label: '食品管理', desc: '维护食品数据库' },
   { to: '/restaurants', icon: 'Location', label: '餐厅管理', desc: '管理餐厅及菜单信息' },
   { to: '/feedback', icon: 'ChatDotRound', label: '反馈管理', desc: '查看用户提交的反馈' },
 ]
+
+function formatCount(value) {
+  const numberValue = Number(value ?? 0)
+  return Number.isFinite(numberValue) ? numberValue.toLocaleString() : '0'
+}
+
+async function loadStats() {
+  loading.value = true
+  try {
+    const res = await dashboardApi.stats()
+    const stats = res.data || {}
+    statCards.forEach((card) => {
+      card.value = formatCount(stats[card.key])
+    })
+  } catch (error) {
+    statCards.forEach((card) => {
+      card.value = '加载失败'
+    })
+    ElMessage.error('仪表盘统计加载失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadStats)
 </script>
 
 <style scoped>
 .dashboard { display: flex; flex-direction: column; gap: 24px; }
 
-/* 统计卡片 */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
+  min-height: 116px;
 }
 @media (max-width: 1200px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) {
+  .stats-grid,
+  .quick-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
 
 .stat-card {
   background: #1a1d27;
@@ -109,12 +139,10 @@ const quickLinks = [
 .stat-icon {
   width: 48px; height: 48px;
   border-radius: 12px;
-  background: rgba(var(--card-color-rgb, 16,185,129), 0.12);
   display: grid; place-items: center;
   color: var(--card-color);
   flex-shrink: 0;
 }
-/* 每张卡着色 */
 .stat-card:nth-child(1) .stat-icon { background: rgba(16,185,129,0.12); color: #10b981; }
 .stat-card:nth-child(2) .stat-icon { background: rgba(99,102,241,0.12); color: #6366f1; }
 .stat-card:nth-child(3) .stat-icon { background: rgba(245,158,11,0.12); color: #f59e0b; }
@@ -131,7 +159,6 @@ const quickLinks = [
   pointer-events: none;
 }
 
-/* 快捷入口 */
 .section-title {
   font-size: 14px;
   font-weight: 600;
@@ -173,7 +200,6 @@ const quickLinks = [
 }
 .quick-card:hover .quick-arrow { color: #10b981; transform: translateX(4px); }
 
-/* 系统信息卡 */
 .info-card {
   background: #1a1d27 !important;
   border: 1px solid rgba(255,255,255,0.05) !important;
